@@ -2,48 +2,54 @@ import { useCallback, useEffect, useState } from 'react';
 import { adminApi, tasksApi } from '../api';
 import TaskModal from '../components/TaskModal';
 import { useAuth } from '../context/AuthContext';
-
-const statusLabel = (status) => status.replace('_', ' ');
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import useTimedMessage from '../hooks/useTimedMessage';
+import { getApiErrorMessage } from '../utils/apiError';
+import { compactParams } from '../utils/params';
+import { formatStatusLabel, formatTaskDate, isTaskOverdue } from '../utils/tasks';
+const DEFAULT_FILTERS = { search: '', status: '', priority: '', user_id: '', page: 1 };
 
 export default function TasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [assignees, setAssignees] = useState([]);
   const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
-  const [filters, setFilters] = useState({ search: '', status: '', priority: '', user_id: '', page: 1 });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { message: notice, show: showNotice } = useTimedMessage();
   const isAdmin = user?.role === 'admin';
+  const debouncedSearch = useDebouncedValue(filters.search, 300);
   const visibleDone = tasks.filter((task) => task.status === 'done').length;
   const visibleHighPriority = tasks.filter((task) => task.priority === 'high' && task.status !== 'done').length;
-  const visibleOverdue = tasks.filter((task) => task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done').length;
+  const visibleOverdue = tasks.filter(isTaskOverdue).length;
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      const params = { ...filters };
-      Object.keys(params).forEach((key) => !params[key] && delete params[key]);
+      const response = await tasksApi.getAll(compactParams({
+        ...filters,
+        search: debouncedSearch,
+      }));
 
-      const response = await tasksApi.getAll(params);
       setTasks(response.data.data.tasks);
       setMeta({
         page: response.data.data.page,
         totalPages: response.data.data.totalPages,
         total: response.data.data.total,
       });
-    } catch {
-      setError('Failed to load tasks.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load tasks.'));
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [debouncedSearch, filters.page, filters.priority, filters.status, filters.user_id]);
 
   useEffect(() => {
-    fetchTasks();
+    void fetchTasks();
   }, [fetchTasks]);
 
   useEffect(() => {
@@ -56,30 +62,21 @@ export default function TasksPage() {
       .then((response) => {
         setAssignees(response.data.data.users.filter((candidate) => candidate.is_active));
       })
-      .catch(() => {});
-  }, [isAdmin]);
-
-  const flash = (message, isError = false) => {
-    if (isError) {
-      setError(message);
-      setTimeout(() => setError(''), 4000);
-      return;
-    }
-
-    setSuccess(message);
-    setTimeout(() => setSuccess(''), 3000);
-  };
+      .catch((err) => {
+        showNotice(getApiErrorMessage(err, 'Failed to load assignees.'), { error: true });
+      });
+  }, [isAdmin, showNotice]);
 
   const handleCreate = async (data) => {
     await tasksApi.create(data);
-    flash('Task created.');
-    fetchTasks();
+    await fetchTasks();
+    showNotice('Task created.');
   };
 
   const handleUpdate = async (data) => {
     await tasksApi.update(modal.id, data);
-    flash('Task updated.');
-    fetchTasks();
+    await fetchTasks();
+    showNotice('Task updated.');
   };
 
   const handleDelete = async (id) => {
@@ -87,10 +84,10 @@ export default function TasksPage() {
 
     try {
       await tasksApi.delete(id);
-      flash('Task deleted.');
-      fetchTasks();
-    } catch {
-      flash('Failed to delete task.', true);
+      await fetchTasks();
+      showNotice('Task deleted.');
+    } catch (err) {
+      showNotice(getApiErrorMessage(err, 'Failed to delete task.'), { error: true });
     }
   };
 
@@ -99,9 +96,9 @@ export default function TasksPage() {
 
     try {
       await tasksApi.update(task.id, { status: nextStatus });
-      fetchTasks();
-    } catch {
-      flash('Failed to update status.', true);
+      await fetchTasks();
+    } catch (err) {
+      showNotice(getApiErrorMessage(err, 'Failed to update status.'), { error: true });
     }
   };
 
@@ -112,8 +109,7 @@ export default function TasksPage() {
   }));
 
   const setPage = (page) => setFilters((current) => ({ ...current, page }));
-
-  const clearFilters = () => setFilters({ search: '', status: '', priority: '', user_id: '', page: 1 });
+  const clearFilters = () => setFilters(DEFAULT_FILTERS);
 
   return (
     <>
@@ -141,7 +137,7 @@ export default function TasksPage() {
 
       <div className="page-content">
         {error && <div className="alert alert-error">{error}</div>}
-        {success && <div className="alert alert-success">{success}</div>}
+        {notice && <div className={`alert alert-${notice.error ? 'error' : 'success'}`}>{notice.text}</div>}
 
         <div className="card toolbar-card">
           <div className="card-header">
@@ -228,7 +224,7 @@ export default function TasksPage() {
         ) : (
           <div className="task-list">
             {tasks.map((task) => {
-              const overdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
+              const overdue = isTaskOverdue(task);
 
               return (
                 <div key={task.id} className={`task-item${task.status === 'done' ? ' done' : ''}`}>
@@ -263,18 +259,14 @@ export default function TasksPage() {
                     </div>
 
                     <div className="task-meta">
-                      <span className={`badge badge-${task.status}`}>{statusLabel(task.status)}</span>
+                      <span className={`badge badge-${task.status}`}>{formatStatusLabel(task.status)}</span>
                       <span className={`badge badge-${task.priority}`}>{task.priority}</span>
 
-                      {isAdmin && (
-                        <span className="owner-badge">
-                          {task.user_name}
-                        </span>
-                      )}
+                      {isAdmin && <span className="owner-badge">{task.user_name}</span>}
 
                       {task.due_date && (
                         <span className={`due-date${overdue ? ' overdue' : ''}`}>
-                          {new Date(task.due_date).toLocaleDateString()}
+                          {formatTaskDate(task.due_date)}
                         </span>
                       )}
 

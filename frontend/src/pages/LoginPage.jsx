@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const FEATURES = [
   {
@@ -41,10 +42,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(form.email, form.password);
+      await login(form.email.trim(), form.password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setError(getApiErrorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,11 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authApi, clearSession, storeAccessToken } from '../api';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import {
+  AUTH_EXPIRED_EVENT,
+  authApi,
+  clearSession,
+  getAccessToken,
+  storeAccessToken,
+} from '../api';
 
 const AuthContext = createContext(null);
 
@@ -11,10 +17,8 @@ export const AuthProvider = ({ children }) => {
     let active = true;
 
     const bootstrapSession = async () => {
-      const existingAccessToken = localStorage.getItem('accessToken');
-
       try {
-        if (!existingAccessToken) {
+        if (!getAccessToken()) {
           const refreshed = await authApi.refresh();
           storeAccessToken(refreshed.data.data.accessToken);
         }
@@ -33,6 +37,19 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      clearSession();
+      setUser(null);
+      setLoading(false);
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
     };
   }, []);
 

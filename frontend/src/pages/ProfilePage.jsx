@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api';
 import { useAuth } from '../context/AuthContext';
+import useTimedMessage from '../hooks/useTimedMessage';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const getInitials = (name = '') =>
   name
@@ -16,15 +18,21 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const [profileForm, setProfileForm] = useState({ name: user?.name || '', email: user?.email || '' });
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
-  const [profileMsg, setProfileMsg] = useState(null);
-  const [pwMsg, setPwMsg] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
+  const { message: profileMsg, show: showProfileMsg } = useTimedMessage();
+  const { message: pwMsg, show: showPasswordMsg } = useTimedMessage();
+  const logoutTimerRef = useRef(null);
 
-  const flash = (setter, text, error) => {
-    setter({ text, error });
-    setTimeout(() => setter(null), 4000);
-  };
+  useEffect(() => {
+    setProfileForm({ name: user?.name || '', email: user?.email || '' });
+  }, [user?.email, user?.name]);
+
+  useEffect(() => () => {
+    if (logoutTimerRef.current) {
+      window.clearTimeout(logoutTimerRef.current);
+    }
+  }, []);
 
   const handleProfileSave = async (event) => {
     event.preventDefault();
@@ -33,9 +41,9 @@ export default function ProfilePage() {
     try {
       const response = await authApi.updateMe(profileForm);
       updateUser(response.data.data.user);
-      flash(setProfileMsg, 'Profile updated successfully.', false);
+      showProfileMsg('Profile updated successfully.');
     } catch (err) {
-      flash(setProfileMsg, err.response?.data?.message || 'Update failed.', true);
+      showProfileMsg(getApiErrorMessage(err, 'Update failed.'), { error: true });
     } finally {
       setSaving(false);
     }
@@ -45,7 +53,7 @@ export default function ProfilePage() {
     event.preventDefault();
 
     if (pwForm.newPassword !== pwForm.confirm) {
-      flash(setPwMsg, 'Passwords do not match.', true);
+      showPasswordMsg('Passwords do not match.', { error: true });
       return;
     }
 
@@ -56,14 +64,14 @@ export default function ProfilePage() {
         currentPassword: pwForm.currentPassword,
         newPassword: pwForm.newPassword,
       });
-      flash(setPwMsg, 'Password changed. Please sign in again with the new password.', false);
+      showPasswordMsg('Password changed. Please sign in again with the new password.', { timeoutMs: 1500 });
       setPwForm({ currentPassword: '', newPassword: '', confirm: '' });
-      setTimeout(async () => {
+      logoutTimerRef.current = window.setTimeout(async () => {
         await logout();
-        navigate('/login');
+        navigate('/login', { replace: true });
       }, 1200);
     } catch (err) {
-      flash(setPwMsg, err.response?.data?.message || 'Password change failed.', true);
+      showPasswordMsg(getApiErrorMessage(err, 'Password change failed.'), { error: true });
     } finally {
       setSavingPw(false);
     }

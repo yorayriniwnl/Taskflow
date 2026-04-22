@@ -37,7 +37,7 @@ This is the first step once one instance starts hitting CPU or connection limits
 
 ### 2. Redis for hot reads and throttling
 
-Redis is already present in `docker-compose.yml`, so the natural next step is to use it for:
+Redis is the natural next infrastructure addition once read traffic or bursty auth traffic justifies it:
 
 - task-list caching
 - per-user dashboard stats caching

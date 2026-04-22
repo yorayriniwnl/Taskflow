@@ -1,28 +1,40 @@
 import axios from 'axios';
 
-const ACCESS_TOKEN_KEY = 'accessToken';
+export const AUTH_EXPIRED_EVENT = 'taskflow:auth-expired';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/+$/, '');
+const REQUEST_TIMEOUT_MS = 10000;
+
+let accessToken = null;
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 10000,
+  timeout: REQUEST_TIMEOUT_MS,
   withCredentials: true,
 });
 
 const clearSession = () => {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  accessToken = null;
   delete api.defaults.headers.common.Authorization;
 };
 
 const storeAccessToken = (token) => {
-  localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  accessToken = token;
   api.defaults.headers.common.Authorization = `Bearer ${token}`;
 };
 
-// Attach access token to every request
+const notifyAuthExpired = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
+};
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+
   return config;
 });
 
@@ -30,11 +42,10 @@ let isRefreshing = false;
 let failedQueue = [];
 
 const processQueue = (error, token = null) => {
-  failedQueue.forEach((prom) => (error ? prom.reject(error) : prom.resolve(token)));
+  failedQueue.forEach((request) => (error ? request.reject(error) : request.resolve(token)));
   failedQueue = [];
 };
 
-// Auto-refresh on 401
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -49,6 +60,7 @@ api.interceptors.response.use(
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then((token) => {
+          originalRequest.headers = originalRequest.headers || {};
           originalRequest.headers.Authorization = `Bearer ${token}`;
           return api(originalRequest);
         });
@@ -58,23 +70,25 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await axios.post(
-          '/api/v1/auth/refresh',
+        const response = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
           {},
           {
             headers: { 'Content-Type': 'application/json' },
             withCredentials: true,
+            timeout: REQUEST_TIMEOUT_MS,
           }
         );
-        const { accessToken } = res.data.data;
-        storeAccessToken(accessToken);
-        processQueue(null, accessToken);
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        const { accessToken: nextAccessToken } = response.data.data;
+        storeAccessToken(nextAccessToken);
+        processQueue(null, nextAccessToken);
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
         clearSession();
-        window.location.href = '/login';
+        notifyAuthExpired();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -85,7 +99,6 @@ api.interceptors.response.use(
   }
 );
 
-// ── Auth API ──────────────────────────────────────────────────────────────────
 export const authApi = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
@@ -96,7 +109,6 @@ export const authApi = {
   changePassword: (data) => api.post('/auth/change-password', data),
 };
 
-// ── Tasks API ─────────────────────────────────────────────────────────────────
 export const tasksApi = {
   getAll: (params) => api.get('/tasks', { params }),
   getOne: (id) => api.get(`/tasks/${id}`),
@@ -106,11 +118,12 @@ export const tasksApi = {
   delete: (id) => api.delete(`/tasks/${id}`),
 };
 
-// ── Admin API ─────────────────────────────────────────────────────────────────
 export const adminApi = {
   getUsers: (params) => api.get('/admin/users', { params }),
   deactivateUser: (id) => api.patch(`/admin/users/${id}/deactivate`),
 };
+
+export const getAccessToken = () => accessToken;
 
 export { clearSession, storeAccessToken };
 export default api;

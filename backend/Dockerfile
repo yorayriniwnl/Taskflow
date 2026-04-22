@@ -1,23 +1,22 @@
-# ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
-# ── Production stage ──────────────────────────────────────────────────────────
 FROM node:20-alpine
 
 RUN apk add --no-cache wget
 
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN mkdir -p logs
+RUN addgroup -g 1001 -S nodejs \
+ && adduser -S nodeapp -u 1001 -G nodejs \
+ && mkdir -p logs \
+ && chown -R nodeapp:nodejs /app
 
-# Run as non-root user for security
-RUN addgroup -g 1001 -S nodejs && adduser -S nodeapp -u 1001
 USER nodeapp
 
 EXPOSE 5000

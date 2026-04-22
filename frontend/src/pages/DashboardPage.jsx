@@ -1,36 +1,54 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { tasksApi } from '../api';
+import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
-
-const StatCard = ({ code, value, label, tone = 'accent', note }) => (
-  <div className="stat-card">
-    <div className="stat-topline">
-      <div className={`stat-icon stat-icon-${tone}`}>{code}</div>
-      <div className="stat-note">{note}</div>
-    </div>
-    <div className="stat-value">{value ?? 0}</div>
-    <div className="stat-label">{label}</div>
-  </div>
-);
+import { getApiErrorMessage } from '../utils/apiError';
+import { formatTaskDate, isTaskOverdue } from '../utils/tasks';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
-    Promise.all([
-      tasksApi.getStats(),
-      tasksApi.getAll({ limit: 5, sortBy: 'created_at', sortOrder: 'DESC' }),
-    ])
-      .then(([statsResponse, tasksResponse]) => {
+    let active = true;
+
+    const loadDashboard = async () => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const [statsResponse, tasksResponse] = await Promise.all([
+          tasksApi.getStats(),
+          tasksApi.getAll({ limit: 5, sortBy: 'created_at', sortOrder: 'DESC' }),
+        ]);
+
+        if (!active) return;
+
         setStats(statsResponse.data.data.stats);
         setRecent(tasksResponse.data.data.tasks);
-      })
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (!active) return;
+
+        setStats(null);
+        setRecent([]);
+        setError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (loading) return <div className="loading"><div className="spinner" /> Loading...</div>;
@@ -50,6 +68,8 @@ export default function DashboardPage() {
 
   return (
     <>
+      {error && <div className="alert alert-error">{error}</div>}
+
       <section className="dashboard-hero">
         <div className="dashboard-hero-copy">
           <div className="page-eyebrow">Command briefing</div>
@@ -142,7 +162,7 @@ export default function DashboardPage() {
                     </thead>
                     <tbody>
                       {recent.map((task) => {
-                        const overdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
+                        const overdue = isTaskOverdue(task);
 
                         return (
                           <tr key={task.id}>
@@ -151,7 +171,7 @@ export default function DashboardPage() {
                             <td><span className={`badge badge-${task.priority}`}>{task.priority}</span></td>
                             {isAdmin && <td className="table-owner">{task.user_name}</td>}
                             <td className={`due-date${overdue ? ' overdue' : ''}`}>
-                              {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                              {formatTaskDate(task.due_date)}
                             </td>
                           </tr>
                         );

@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { buildPaginationMeta, parseDatabaseInt } = require('../utils/pagination');
 
 const TaskModel = {
   /**
@@ -30,8 +31,8 @@ const TaskModel = {
     sortOrder = 'DESC',
   } = {}) {
     const offset = (page - 1) * limit;
-    let conditions = [];
-    let params = [];
+    const conditions = [];
+    const params = [];
     let idx = 1;
 
     if (userId) { conditions.push(`t.user_id = $${idx++}`); params.push(userId); }
@@ -60,18 +61,24 @@ const TaskModel = {
          FROM tasks t
          JOIN users u ON t.user_id = u.id
          ${where}
-         ORDER BY t.${col} ${order}
+        ORDER BY t.${col} ${order}
          LIMIT $${idx} OFFSET $${idx + 1}`,
         [...params, limit, offset]
       ),
-      query(`SELECT COUNT(*) FROM tasks t ${where}`, params),
+      query(
+        `SELECT COUNT(*)
+         FROM tasks t
+         JOIN users u ON t.user_id = u.id
+         ${where}`,
+        params
+      ),
     ]);
+
+    const total = parseDatabaseInt(count.rows[0].count);
 
     return {
       tasks: tasks.rows,
-      total: parseInt(count.rows[0].count),
-      page,
-      totalPages: Math.ceil(parseInt(count.rows[0].count) / limit),
+      ...buildPaginationMeta(total, page, limit),
     };
   },
 
@@ -140,7 +147,16 @@ const TaskModel = {
        FROM tasks ${where}`,
       params
     );
-    return result.rows[0];
+    const stats = result.rows[0];
+
+    return {
+      todo: parseDatabaseInt(stats.todo),
+      in_progress: parseDatabaseInt(stats.in_progress),
+      done: parseDatabaseInt(stats.done),
+      high_priority_pending: parseDatabaseInt(stats.high_priority_pending),
+      overdue: parseDatabaseInt(stats.overdue),
+      total: parseDatabaseInt(stats.total),
+    };
   },
 };
 

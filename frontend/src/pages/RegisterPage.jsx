@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const BENEFITS = [
   {
@@ -34,18 +35,29 @@ export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const set = (key) => (event) => {
+    const value = event.target.value;
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => ({ ...current, [key]: '' }));
+    setApiError('');
+  };
 
   const validate = () => {
     const nextErrors = {};
     const passwordRules = [
       { test: (value) => value.length >= 8, message: 'Password must be at least 8 characters.' },
       { test: (value) => /[A-Z]/.test(value), message: 'Must include an uppercase letter.' },
+      { test: (value) => /[a-z]/.test(value), message: 'Must include a lowercase letter.' },
       { test: (value) => /[0-9]/.test(value), message: 'Must include a number.' },
       { test: (value) => /[^A-Za-z0-9]/.test(value), message: 'Must include a special character.' },
     ];
 
-    if (!form.name.trim()) nextErrors.name = 'Name is required.';
+    if (!form.name.trim()) {
+      nextErrors.name = 'Name is required.';
+    } else if (form.name.trim().length < 2) {
+      nextErrors.name = 'Name must be at least 2 characters.';
+    }
+
     if (!/\S+@\S+\.\S+/.test(form.email)) nextErrors.email = 'Valid email required.';
 
     const failedPasswordRule = passwordRules.find((rule) => !rule.test(form.password));
@@ -63,7 +75,11 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await register(form);
+      await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      });
       navigate('/dashboard');
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
@@ -74,7 +90,7 @@ export default function RegisterPage() {
         });
         setErrors(mapped);
       } else {
-        setApiError(err.response?.data?.message || 'Registration failed.');
+        setApiError(getApiErrorMessage(err, 'Registration failed.'));
       }
     } finally {
       setLoading(false);
@@ -133,7 +149,7 @@ export default function RegisterPage() {
 
           <div className="auth-note">
             <div className="auth-note-label">Password rules</div>
-            <div className="auth-note-copy">Use at least 8 characters with an uppercase letter, number, and symbol.</div>
+            <div className="auth-note-copy">Use at least 8 characters with uppercase, lowercase, number, and symbol.</div>
           </div>
 
           <form onSubmit={handleSubmit}>

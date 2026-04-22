@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const AuthController = require('../../controllers/authController');
-const { authenticate } = require('../../middleware/auth');
+const { authenticate, optionalAuth } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
 const {
   registerValidator,
@@ -125,7 +125,7 @@ router.post('/refresh', AuthController.refresh);
  *     responses:
  *       200: { description: Logged out successfully }
  */
-router.post('/logout', authenticate, AuthController.logout);
+router.post('/logout', optionalAuth, AuthController.logout);
 
 /**
  * @swagger

@@ -1,17 +1,22 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import Layout from './components/Layout';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import AdminPage from './pages/AdminPage';
-import DashboardPage from './pages/DashboardPage';
-import LoginPage from './pages/LoginPage';
-import ProfilePage from './pages/ProfilePage';
-import RegisterPage from './pages/RegisterPage';
-import TasksPage from './pages/TasksPage';
+
+const Layout = lazy(() => import('./components/Layout'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const TasksPage = lazy(() => import('./pages/TasksPage'));
+
+const RouteLoader = () => <div className="loading"><div className="spinner" /> Loading...</div>;
+const withSuspense = (element) => <Suspense fallback={<RouteLoader />}>{element}</Suspense>;
 
 const ProtectedRoute = ({ children, adminOnly = false }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return <div className="loading"><div className="spinner" /> Loading...</div>;
+  if (loading) return <RouteLoader />;
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/dashboard" replace />;
 
@@ -21,10 +26,15 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return <div className="loading"><div className="spinner" /> Loading...</div>;
+  if (loading) return <RouteLoader />;
   if (user) return <Navigate to="/dashboard" replace />;
 
   return children;
+};
+
+const CatchAllRoute = () => {
+  const { user } = useAuth();
+  return <Navigate to={user ? '/dashboard' : '/login'} replace />;
 };
 
 export default function App() {
@@ -32,18 +42,18 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          <Route path="/login" element={<PublicRoute>{withSuspense(<LoginPage />)}</PublicRoute>} />
+          <Route path="/register" element={<PublicRoute>{withSuspense(<RegisterPage />)}</PublicRoute>} />
 
-          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route path="/" element={<ProtectedRoute>{withSuspense(<Layout />)}</ProtectedRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="tasks" element={<TasksPage />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
+            <Route path="dashboard" element={withSuspense(<DashboardPage />)} />
+            <Route path="tasks" element={withSuspense(<TasksPage />)} />
+            <Route path="profile" element={withSuspense(<ProfilePage />)} />
+            <Route path="admin" element={<ProtectedRoute adminOnly>{withSuspense(<AdminPage />)}</ProtectedRoute>} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<CatchAllRoute />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

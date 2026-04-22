@@ -1,10 +1,13 @@
-const { body, query, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
+
+const validateTags = (tags) =>
+  Array.isArray(tags) && tags.every((tag) => typeof tag === 'string' && tag.trim().length <= 50);
 
 const createTaskValidator = [
   body('title')
     .trim()
     .notEmpty().withMessage('Title is required.')
-    .isLength({ min: 1, max: 255 }).withMessage('Title must be 1–255 characters.'),
+    .isLength({ min: 1, max: 255 }).withMessage('Title must be 1-255 characters.'),
 
   body('description')
     .optional()
@@ -26,7 +29,7 @@ const createTaskValidator = [
   body('tags')
     .optional()
     .isArray({ max: 10 }).withMessage('Tags must be an array with at most 10 items.')
-    .custom((tags) => tags.every((t) => typeof t === 'string' && t.length <= 50))
+    .custom(validateTags)
     .withMessage('Each tag must be a string of at most 50 characters.'),
 
   body('user_id')
@@ -38,7 +41,7 @@ const updateTaskValidator = [
   body('title')
     .optional()
     .trim()
-    .isLength({ min: 1, max: 255 }).withMessage('Title must be 1–255 characters.'),
+    .isLength({ min: 1, max: 255 }).withMessage('Title must be 1-255 characters.'),
 
   body('description')
     .optional({ nullable: true })
@@ -59,7 +62,9 @@ const updateTaskValidator = [
 
   body('tags')
     .optional()
-    .isArray({ max: 10 }).withMessage('Tags must be an array with at most 10 items.'),
+    .isArray({ max: 10 }).withMessage('Tags must be an array with at most 10 items.')
+    .custom(validateTags)
+    .withMessage('Each tag must be a string of at most 50 characters.'),
 
   body('user_id')
     .optional()
@@ -67,6 +72,7 @@ const updateTaskValidator = [
 ];
 
 const taskQueryValidator = [
+  query('search').optional().isLength({ max: 255 }).withMessage('Search must not exceed 255 characters.'),
   query('status').optional().isIn(['todo', 'in_progress', 'done']).withMessage('Invalid status filter.'),
   query('priority').optional().isIn(['low', 'medium', 'high']).withMessage('Invalid priority filter.'),
   query('user_id').optional().isUUID().withMessage('user_id must be a valid UUID.'),

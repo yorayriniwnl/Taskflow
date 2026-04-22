@@ -1,3 +1,4 @@
+const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
@@ -123,21 +124,69 @@ Roles:
     },
     security: [{ BearerAuth: [] }],
   },
-  apis: ['./src/routes/v1/*.js'],
+  apis: [path.join(__dirname, '../routes/v1/*.js')],
 };
 
-const swaggerSpec = swaggerJsdoc(options);
+let swaggerSpec;
+let swaggerUiHandler;
+
+const isSuppressedWarning = (warning, optionsOrType, code) => {
+  const warningCode =
+    typeof optionsOrType === 'object'
+      ? optionsOrType?.code
+      : code || optionsOrType;
+  const warningMessage = typeof warning === 'string' ? warning : warning?.message || '';
+
+  return (
+    warningCode === 'DEP0169' ||
+    warningMessage.includes('`url.parse()` behavior is not standardized')
+  );
+};
+
+const withSuppressedSwaggerWarning = (callback) => {
+  const originalEmitWarning = process.emitWarning;
+
+  process.emitWarning = (warning, optionsOrType, code, ...rest) => {
+    if (isSuppressedWarning(warning, optionsOrType, code)) {
+      return;
+    }
+
+    return originalEmitWarning.call(process, warning, optionsOrType, code, ...rest);
+  };
+
+  try {
+    return callback();
+  } finally {
+    process.emitWarning = originalEmitWarning;
+  }
+};
+
+const getSwaggerSpec = () => {
+  if (!swaggerSpec) {
+    swaggerSpec = withSuppressedSwaggerWarning(() => swaggerJsdoc(options));
+  }
+
+  return swaggerSpec;
+};
+
+const getSwaggerUiHandler = () => {
+  if (!swaggerUiHandler) {
+    swaggerUiHandler = swaggerUi.setup(getSwaggerSpec(), {
+      explorer: true,
+      customCss: '.swagger-ui .topbar { background-color: #1a1a2e; }',
+      customSiteTitle: 'TaskFlow API Docs',
+    });
+  }
+
+  return swaggerUiHandler;
+};
 
 const setupSwagger = (app) => {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    explorer: true,
-    customCss: '.swagger-ui .topbar { background-color: #1a1a2e; }',
-    customSiteTitle: 'TaskFlow API Docs',
-  }));
+  app.use('/api-docs', swaggerUi.serve, (req, res, next) => getSwaggerUiHandler()(req, res, next));
 
   app.get('/api-docs.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    res.send(swaggerSpec);
+    res.send(getSwaggerSpec());
   });
 };
 

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { adminApi, tasksApi } from '../api';
+import StatCard from '../components/StatCard';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import useTimedMessage from '../hooks/useTimedMessage';
+import { getApiErrorMessage } from '../utils/apiError';
+import { compactParams } from '../utils/params';
 
 const ADMIN_STATS = [
   { code: 'AL', label: 'All tasks', key: 'total' },
@@ -10,57 +15,70 @@ const ADMIN_STATS = [
   { code: 'OD', label: 'Overdue', key: 'overdue', tone: 'warning' },
 ];
 
+const DEFAULT_FILTERS = { search: '', role: '', page: 1 };
+
 export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [meta, setMeta] = useState({ page: 1, totalPages: 1, total: 0 });
-  const [filters, setFilters] = useState({ search: '', role: '', page: 1 });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState('');
   const [allStats, setAllStats] = useState(null);
-
-  const flash = (text, error = false) => {
-    setMsg({ text, error });
-    setTimeout(() => setMsg(null), 4000);
-  };
+  const debouncedSearch = useDebouncedValue(filters.search, 300);
+  const { message: notice, show: showNotice } = useTimedMessage();
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
+    setError('');
 
     try {
-      const params = { ...filters };
-      Object.keys(params).forEach((key) => !params[key] && delete params[key]);
-
-      const response = await adminApi.getUsers(params);
+      const response = await adminApi.getUsers(compactParams({ ...filters, search: debouncedSearch }));
       setUsers(response.data.data.users);
       setMeta({
         page: response.data.data.page,
         totalPages: response.data.data.totalPages,
         total: response.data.data.total,
       });
-    } catch {
-      flash('Failed to load users.', true);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load users.'));
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [debouncedSearch, filters.page, filters.role]);
 
   useEffect(() => {
-    fetchUsers();
+    void fetchUsers();
   }, [fetchUsers]);
 
   useEffect(() => {
-    tasksApi.getStats().then((response) => setAllStats(response.data.data.stats)).catch(() => {});
-  }, []);
+    let active = true;
+
+    tasksApi.getStats()
+      .then((response) => {
+        if (active) {
+          setAllStats(response.data.data.stats);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          showNotice(getApiErrorMessage(err, 'Failed to load admin stats.'), { error: true });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showNotice]);
 
   const handleDeactivate = async (id, name) => {
     if (!window.confirm(`Deactivate ${name}?`)) return;
 
     try {
       await adminApi.deactivateUser(id);
-      flash(`${name} has been deactivated.`);
-      fetchUsers();
+      await fetchUsers();
+      showNotice(`${name} has been deactivated.`);
     } catch (err) {
-      flash(err.response?.data?.message || 'Failed to deactivate user.', true);
+      showNotice(getApiErrorMessage(err, 'Failed to deactivate user.'), { error: true });
     }
   };
 
@@ -71,7 +89,7 @@ export default function AdminPage() {
   }));
 
   const setPage = (page) => setFilters((current) => ({ ...current, page }));
-  const clearFilters = () => setFilters({ search: '', role: '', page: 1 });
+  const clearFilters = () => setFilters(DEFAULT_FILTERS);
 
   return (
     <>
@@ -93,16 +111,19 @@ export default function AdminPage() {
       </div>
 
       <div className="page-content">
-        {msg && <div className={`alert alert-${msg.error ? 'error' : 'success'}`}>{msg.text}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
+        {notice && <div className={`alert alert-${notice.error ? 'error' : 'success'}`}>{notice.text}</div>}
 
         {allStats && (
           <div className="stats-grid">
             {ADMIN_STATS.map((item) => (
-              <div key={item.key} className="stat-card">
-                <div className={`stat-icon stat-icon-${item.tone || 'accent'}`}>{item.code}</div>
-                <div className="stat-value">{allStats[item.key] ?? 0}</div>
-                <div className="stat-label">{item.label}</div>
-              </div>
+              <StatCard
+                key={item.key}
+                code={item.code}
+                label={item.label}
+                tone={item.tone}
+                value={allStats[item.key]}
+              />
             ))}
           </div>
         )}
@@ -140,6 +161,11 @@ export default function AdminPage() {
 
           {loading ? (
             <div className="loading"><div className="spinner" /> Loading users...</div>
+          ) : users.length === 0 ? (
+            <div className="empty-state">
+              <h3>No users found</h3>
+              <p>Adjust the filters to bring matching accounts back into view.</p>
+            </div>
           ) : (
             <div className="table-wrap">
               <table className="table">

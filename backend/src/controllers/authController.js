@@ -1,28 +1,36 @@
+const crypto = require('crypto');
 const xss = require('xss');
-const UserModel = require('../models/User');
-const { generateTokens, verifyRefreshToken } = require('../utils/tokenUtils');
-const AppError = require('../utils/AppError');
-const { query } = require('../config/database');
+
 const logger = require('../config/logger');
+const { query } = require('../config/database');
+const UserModel = require('../models/User');
+const AppError = require('../utils/AppError');
+const {
+  generateTokens,
+  verifyRefreshToken,
+} = require('../utils/tokenUtils');
 const {
   clearRefreshTokenCookie,
   getRefreshTokenFromRequest,
   setRefreshTokenCookie,
 } = require('../utils/refreshCookie');
 
+const buildAuthResponse = (user, tokens) => ({
+  user: { id: user.id, email: user.email, name: user.name, role: user.role },
+  accessToken: tokens.accessToken,
+  expiresIn: tokens.expiresIn,
+  session: {
+    refreshTokenTransport: 'httpOnly-cookie',
+  },
+});
+
 const AuthController = {
-  /**
-   * POST /api/v1/auth/register
-   */
   async register(req, res, next) {
     try {
       const { email, name, password } = req.body;
-
-      // Sanitize inputs
       const sanitizedName = xss(name);
       const sanitizedEmail = xss(email);
 
-      // Check existing user
       const existing = await UserModel.findByEmail(sanitizedEmail);
       if (existing) {
         throw new AppError('An account with this email already exists.', 409);
@@ -37,30 +45,19 @@ const AuthController = {
       res.status(201).json({
         success: true,
         message: 'Account created successfully.',
-        data: {
-          user: { id: user.id, email: user.email, name: user.name, role: user.role },
-          accessToken: tokens.accessToken,
-          expiresIn: tokens.expiresIn,
-          session: {
-            refreshTokenTransport: 'httpOnly-cookie',
-          },
-        },
+        data: buildAuthResponse(user, tokens),
       });
     } catch (err) {
       next(err);
     }
   },
 
-  /**
-   * POST /api/v1/auth/login
-   */
   async login(req, res, next) {
     try {
-      const { email, password } = req.body;
+      const email = xss(req.body.email || '');
+      const { password } = req.body;
 
       const user = await UserModel.findByEmail(email);
-
-      // Timing-safe: always call verifyPassword even if user not found
       const dummyHash = '$2a$12$invalidhashfortimingnobodyguessesnothing000000000000000';
       const isValid = await UserModel.verifyPassword(
         password,
@@ -84,27 +81,19 @@ const AuthController = {
       res.json({
         success: true,
         message: 'Logged in successfully.',
-        data: {
-          user: { id: user.id, email: user.email, name: user.name, role: user.role },
-          accessToken: tokens.accessToken,
-          expiresIn: tokens.expiresIn,
-          session: {
-            refreshTokenTransport: 'httpOnly-cookie',
-          },
-        },
+        data: buildAuthResponse(user, tokens),
       });
     } catch (err) {
       next(err);
     }
   },
 
-  /**
-   * POST /api/v1/auth/refresh
-   */
   async refresh(req, res, next) {
     try {
       const refreshToken = getRefreshTokenFromRequest(req);
-      if (!refreshToken) throw new AppError('Refresh token required.', 400);
+      if (!refreshToken) {
+        throw new AppError('Refresh token required.', 400);
+      }
 
       const userId = await verifyRefreshToken(refreshToken);
       const user = await UserModel.findById(userId);
@@ -136,29 +125,22 @@ const AuthController = {
     }
   },
 
-  /**
-   * POST /api/v1/auth/logout
-   */
   async logout(req, res, next) {
     try {
       const refreshToken = getRefreshTokenFromRequest(req);
       if (refreshToken) {
-        const crypto = require('crypto');
         const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
         await query('DELETE FROM refresh_tokens WHERE token_hash = $1', [tokenHash]);
       }
 
       clearRefreshTokenCookie(res);
-      logger.info(`User logged out: ${req.user?.email}`);
+      logger.info(`User logged out: ${req.user?.email || 'anonymous-session'}`);
       res.json({ success: true, message: 'Logged out successfully.' });
     } catch (err) {
       next(err);
     }
   },
 
-  /**
-   * GET /api/v1/auth/me
-   */
   async getMe(req, res, next) {
     try {
       const user = await UserModel.findById(req.user.id);
@@ -168,9 +150,6 @@ const AuthController = {
     }
   },
 
-  /**
-   * PATCH /api/v1/auth/me
-   */
   async updateMe(req, res, next) {
     try {
       const { name, email } = req.body;
@@ -193,19 +172,17 @@ const AuthController = {
     }
   },
 
-  /**
-   * POST /api/v1/auth/change-password
-   */
   async changePassword(req, res, next) {
     try {
       const { currentPassword, newPassword } = req.body;
       const user = await UserModel.findByEmail(req.user.email);
 
       const isValid = await UserModel.verifyPassword(currentPassword, user.password_hash);
-      if (!isValid) throw new AppError('Current password is incorrect.', 400);
+      if (!isValid) {
+        throw new AppError('Current password is incorrect.', 400);
+      }
 
       await UserModel.updatePassword(req.user.id, newPassword);
-      // Revoke all refresh tokens
       await query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
       clearRefreshTokenCookie(res);
 

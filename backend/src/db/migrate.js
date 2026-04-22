@@ -1,5 +1,7 @@
 const path = require('path');
+
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
 const { query, connectDB } = require('../config/database');
 const logger = require('../config/logger');
 
@@ -8,10 +10,8 @@ const migrate = async () => {
     await connectDB();
     logger.info('Running database migrations...');
 
-    // Enable UUID extension
     await query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
 
-    // ── Users table ──────────────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS users (
         id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -26,7 +26,6 @@ const migrate = async () => {
       );
     `);
 
-    // ── Refresh tokens table ─────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS refresh_tokens (
         id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -37,7 +36,6 @@ const migrate = async () => {
       );
     `);
 
-    // ── Tasks table ──────────────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS tasks (
         id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -53,14 +51,12 @@ const migrate = async () => {
       );
     `);
 
-    // ── Indexes for performance ──────────────────────────────────────────────
     await query(`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);`);
     await query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
 
-    // ── Auto-update updated_at trigger ───────────────────────────────────────
     await query(`
       CREATE OR REPLACE FUNCTION update_updated_at()
       RETURNS TRIGGER AS $$
@@ -77,9 +73,9 @@ const migrate = async () => {
       `);
     }
 
-    // ── Seed admin user ──────────────────────────────────────────────────────
     const bcrypt = require('bcryptjs');
     const adminExists = await query(`SELECT id FROM users WHERE email = 'admin@taskflow.dev'`);
+
     if (adminExists.rows.length === 0) {
       const hash = await bcrypt.hash('Admin@123456', 12);
       await query(
@@ -87,13 +83,13 @@ const migrate = async () => {
          VALUES ($1, $2, $3, 'admin')`,
         ['admin@taskflow.dev', 'Admin User', hash]
       );
-      logger.info('✅ Seed admin user created: admin@taskflow.dev / Admin@123456');
+      logger.info('Seed admin user created: admin@taskflow.dev / Admin@123456');
     }
 
-    logger.info('✅ All migrations completed successfully');
+    logger.info('All migrations completed successfully');
     process.exit(0);
   } catch (err) {
-    logger.error('❌ Migration failed:', err);
+    logger.error('Migration failed:', err);
     process.exit(1);
   }
 };
