@@ -1,0 +1,71 @@
+name: Refresh dependency locks
+
+on:
+  push:
+    branches:
+      - ci/verification-20261001
+    paths:
+      - ".github/workflows/refresh-locks.yml"
+      - "frontend/package.json"
+      - "backend/package.json"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/verification-20261001
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Refresh frontend lock
+        working-directory: frontend
+        run: |
+          npm install --package-lock-only
+          npm audit fix --package-lock-only
+
+      - name: Refresh backend lock
+        working-directory: backend
+        run: |
+          npm install --package-lock-only
+          npm audit fix --package-lock-only
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+          npm run design:check
+          npm run build
+
+      - name: Validate backend
+        working-directory: backend
+        env:
+          DB_PASSWORD: candidate-ci-db-password
+          JWT_SECRET: candidate-ci-access-secret-32-characters-minimum
+          JWT_REFRESH_SECRET: candidate-ci-refresh-secret-32-characters-minimum
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check server.js
+          node -e "require('./src/config/env').validateRuntimeConfig()"
+
+      - name: Commit validated locks
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/package.json frontend/package-lock.json backend/package.json backend/package-lock.json; then
+            echo "No dependency update required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package.json frontend/package-lock.json backend/package.json backend/package-lock.json
+          git commit -m "deps: refresh validated TaskFlow dependency locks"
+          git push origin HEAD:ci/verification-20261001
