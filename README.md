@@ -1,3 +1,13 @@
+<!-- YOR REDLINE / README COVER V1 -->
+<div align="center">
+
+![Taskflow | YOR REDLINE](docs/yor-redline-cover.svg)
+
+<sub><strong>YOR / PROJECT DOSSIER</strong> · <a href="https://github.com/yorayriniwnl">GitHub</a> · <a href="https://yorayriniwnl.in">Portfolio</a></sub>
+
+</div>
+<!-- END YOR REDLINE -->
+
 # YOR // TaskFlow
 
 TaskFlow is an API-backed task workspace with JWT authentication, role-based access control, task CRUD, profiles, and an admin surface. The frontend keeps the existing route model while presenting it as a YOR command deck: black field, graphite panels, crimson actions, signal annotations, and evidence-led status language.
