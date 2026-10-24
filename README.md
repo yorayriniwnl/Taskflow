@@ -12,6 +12,23 @@
 
 TaskFlow is an API-backed task workspace with JWT authentication, role-based access control, task CRUD, profiles, and an admin surface. The frontend keeps the existing route model while presenting it as a YOR command deck: black field, graphite panels, crimson actions, signal annotations, and evidence-led status language.
 
+<!-- YOR REDLINE / EXPERIENCE V2 -->
+
+<a id="system-map"></a>
+## System map
+
+<div align="center"><picture><source media="(max-width: 600px)" srcset="docs/yor-redline-system-mobile.svg"/><img src="docs/yor-redline-system.svg" width="100%" alt="Task operations workspace: Authenticate user to Resolve role to Manage tasks to Review workspace"/></picture></div>
+
+| Project signal | Documented scope |
+| :--- | :--- |
+| **Current maturity** | LOCAL DEMO |
+| **Technical focus** | JWT authentication, role-based access control, task CRUD, profiles, and admin interface. |
+| **Evidence boundary** | Frontend build verification does not establish production authentication hardening. |
+
+**Navigate:** [Evidence boundary](#evidence-boundary) · [Local verification](#local-verification) · [Visual contract](#visual-contract) · [Scope notes](#scope-notes)
+
+<!-- END YOR REDLINE / EXPERIENCE V2 -->
+
 ## Evidence boundary
 
 | Surface | Status | Evidence boundary |
